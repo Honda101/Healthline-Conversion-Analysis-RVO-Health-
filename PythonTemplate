@@ -1,0 +1,44 @@
+import pandas as pd
+import numpy as np
+
+df = pd.read_csv('Data Analytics - Take Home Test HL - HL .csv')
+
+def prep_complete_tableau_data(df):
+    # 1. Standard Cleaning
+    df['known_diagnosis'] = df['known_diagnosis'].str.strip().replace('', 'Unknown').fillna('Unknown')
+    df['session_start_time'] = pd.to_datetime(df['session_start_time'])
+    
+    # 2. Revenue per Row (Actual)
+    rev_map = {'A': 5.0, 'B': 7.0, 'C': 2.5}
+    df['Actual_Revenue'] = df.apply(lambda x: rev_map[x['Asset Shown']] if x['Conversion'] == 1 else 0, axis=1)
+
+    # 3. Calculate Revenue Per View (RPV) for every segment
+    # This helps Tableau identify which asset "wins" for a specific Diagnosis
+    segment_stats = df.groupby(['known_diagnosis', 'Asset Shown']).agg(
+        Views=('pageview_id', 'count'),
+        Total_Rev=('Actual_Revenue', 'sum')
+    ).reset_index()
+    segment_stats['RPV'] = segment_stats['Total_Rev'] / segment_stats['Views']
+
+    # Find the "Winning Asset" for each diagnosis based on RPV
+    idx = segment_stats.groupby(['known_diagnosis'])['RPV'].idxmax()
+    winners = segment_stats.loc[idx, ['known_diagnosis', 'Asset Shown', 'RPV']]
+    winners.columns = ['known_diagnosis', 'Optimal_Asset', 'Optimal_RPV']
+
+    # 4. Merge the "Optimal" logic back into the main data
+    df = df.merge(winners, on='known_diagnosis', how='left')
+
+    # 5. Opportunity Gap Calculation
+    # If we had shown the Optimal_Asset, we would expect to earn 'Optimal_RPV' for this view
+    df['Potential_Revenue_Expected'] = df['Optimal_RPV']
+    
+    # 6. Time/Category Features
+    df['Hour_of_Day'] = df['session_start_time'].dt.hour
+    df['Is_Weekend'] = df['session_start_time'].dt.dayofweek // 5  # 1 for weekend
+    
+    # Save the file
+    output_path = '/Users/dustinmeyer/Downloads/HL_Final_Analysis.csv'
+    df.to_csv(output_path, index=False)
+    print("Prepped for Tableau!")
+
+prep_complete_tableau_data(df)
